@@ -25,7 +25,7 @@
 
   <groupId>org.jszip.redist</groupId>
   <artifactId>zepto</artifactId>
-  <version>0.4-SNAPSHOT</version>
+  <version>0.4</version>
   <packaging>jszip</packaging>
 
   <name>zepto.js</name>
@@ -47,7 +47,7 @@
     <connection>scm:git:git://github.com/jszip/zepto-redist.git</connection>
     <developerConnection>scm:git:git@github.com:jszip/zepto-redist.git</developerConnection>
     <url>http://github.com/jszip/zepto-redist/tree/master/</url>
-    <tag>HEAD</tag>
+    <tag>zepto-0.4</tag>
   </scm>
   <issueManagement>
     <system>github</system>

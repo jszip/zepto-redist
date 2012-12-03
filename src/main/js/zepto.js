@@ -1,13 +1,12 @@
 var Zepto = (function() {
   var slice=[].slice, d=document,
     ADJ_OPS={append: 'beforeEnd', prepend: 'afterBegin', before: 'beforeBegin', after: 'afterEnd'},
-    e, k, css, un;
+    e, k, css, un, $$;
 
   // fix for iOS 3.2
   if(String.prototype.trim === un)
     String.prototype.trim = function(){ return this.replace(/^\s+/, '').replace(/\s+$/, '') };
 
-  function $$(el, selector){ return slice.call(el.querySelectorAll(selector)) }
   function classRE(name){ return new RegExp("(^|\\s)"+name+"(\\s|$)") }
   function compact(array){ return array.filter(function(el){ return el !== un && el !== null }) }
 
@@ -15,15 +14,16 @@ var Zepto = (function() {
   Z.prototype = $.fn;
 
   function $(_, context){
-    return _ == document ? new Z : (context !== un) ? $(context).find(_) : new Z(compact(_ instanceof Z ? _.dom : (_ instanceof Array ? _ : (_ instanceof Element ? [_] : $$(d, _)))), _);
+    return _ == d ? new Z : (context !== un) ? $(context).find(_) : new Z(compact(_ instanceof Z ? _.dom : (_ instanceof Array ? _ : (_ instanceof Element || _ === window ? [_] : $$(d, _)))), _);
   }
-  
+
   $.extend = function(target, src){ for(k in src) target[k] = src[k] }
+  $.qsa = $$ = function(el, selector){ return slice.call(el.querySelectorAll(selector)) }
   camelize = function(str){ return str.replace(/-+(.)?/g, function(match, chr){ return chr ? chr.toUpperCase() : '' }) }
 
   $.fn = {
     ready: function(callback){ 
-      document.addEventListener('DOMContentLoaded', callback, false); return this;
+      d.addEventListener('DOMContentLoaded', callback, false); return this;
     },
     compact: function(){ this.dom=compact(this.dom); return this },
     get: function(idx){ return idx === un ? this.dom : this.dom[idx] },
@@ -56,6 +56,11 @@ var Zepto = (function() {
         (this.dom.length>0 ? this.dom[0].innerHTML : null) : 
         this.each(function(el){ el.innerHTML = html });
     },
+    text: function(text){
+      return text === un ?
+        (this.dom.length>0 ? this.dom[0].innerText : null) :
+        this.each(function(el){ el.innerText = text });
+    },
     attr: function(name,value){
       return (typeof name == 'string' && value === un) ? 
         (this.dom.length>0 ? this.dom[0].getAttribute(name) || undefined : null) :
@@ -77,23 +82,6 @@ var Zepto = (function() {
     index: function(el){
       return this.dom.indexOf($(el).get(0));
     },
-    bind: function(event, callback){
-      return this.each(function(el){
-        event.split(/\s/).forEach(function(event){ el.addEventListener(event, callback, false); });
-      });
-    },
-    delegate: function(selector, event, callback){
-      return this.each(function(el){
-        el.addEventListener(event, function(event){
-          var target = event.target, nodes = $$(el, selector);
-          while(target && nodes.indexOf(target)<0) target = target.parentNode;
-          if(target && !(target===el) && !(target===d)) callback(target, event);
-        }, false);
-      });
-    },
-    live: function(event, callback){
-      $(d.body).delegate(this.selector, event, callback); return this;
-    },
     hasClass: function(name){
       return classRE(name).test(this.dom[0].className);
     },
@@ -102,9 +90,6 @@ var Zepto = (function() {
     },
     removeClass: function(name){
       return this.each(function(el){ el.className = el.className.replace(classRE(name), ' ').trim() });
-    },
-    trigger: function(event){
-      return this.each(function(el){ var e; el.dispatchEvent(e = d.createEvent('Events'), e.initEvent(event, true, false)) });
     }
   };
   
@@ -124,12 +109,58 @@ var Zepto = (function() {
 
 '$' in window||(window.$=Zepto);
 (function($){
+  var d=document, $$=$.qsa, handlers=[];
+  function find(el, ev, fn) {
+    return handlers.filter(function(handler){
+      return handler && handler.el===el && (!ev || handler.ev===ev) && (!fn || handler.fn===fn);
+    });
+  }
+  $.event = {
+    add: function(el, events, fn){
+      events.split(/\s/).forEach(function(ev){
+        var handler = {ev: ev, el: el, fn: fn, i: handlers.length};
+        handlers.push(handler);
+        el.addEventListener(ev, fn, false);
+      });
+    },
+    remove: function(el, events, fn){
+      (events||'').split(/\s/).forEach(function(ev){
+        find(el, ev, fn).forEach(function(handler){
+          handlers[handler.i] = null;
+          el.removeEventListener(handler.ev, handler.fn, false);
+        });
+      });
+    }
+  };
+  $.fn.bind = function(event, callback){
+    return this.each(function(el){ $.event.add(el, event, callback) });
+  };
+  $.fn.unbind = function(event, callback){
+    return this.each(function(el){ $.event.remove(el, event, callback) });
+  };
+  $.fn.delegate = function(selector, event, callback){
+    return this.each(function(el){
+      $.event.add(el, event, function(event){
+        var target = event.target, nodes = $$(el, selector);
+        while(target && nodes.indexOf(target)<0) target = target.parentNode;
+        if(target && !(target===el) && !(target===d)) callback.call(target, event);
+      }, false);
+    });
+  };
+  $.fn.live = function(event, callback){
+    $(d.body).delegate(this.selector, event, callback); return this;
+  };
+  $.fn.trigger = function(event){
+    return this.each(function(el){ var e; el.dispatchEvent(e = d.createEvent('Events'), e.initEvent(event, true, false)) });
+  };
+})(Zepto);
+(function($){
   function detect(ua){
     var ua = ua, os = {},
-      android = ua.match(/(Android)\s+([0-9\.]+)/),
-      iphone = ua.match(/(iPhone\sOS)\s([0-9_]+)/),
-      ipad = ua.match(/(iPad).*OS\s([0-9_]+)/),
-      webos = ua.match(/(webOS)\/([0-9\.]+)/);
+      android = ua.match(/(Android)\s+([\d.]+)/),
+      iphone = ua.match(/(iPhone\sOS)\s([\d_]+)/),
+      ipad = ua.match(/(iPad).*OS\s([\d_]+)/),
+      webos = ua.match(/(webOS)\/([\d.]+)/);
     if(android) os.android = true, os.version = android[2];
     if(iphone) os.ios = true, os.version = iphone[2].replace(/_/g,'.'), os.iphone = true;
     if(ipad) os.ios = true, os.version = ipad[2].replace(/_/g,'.'), os.ipad = true;
@@ -138,6 +169,10 @@ var Zepto = (function() {
   }
   $.os = detect(navigator.userAgent);
   $.__detect = detect;
+  $.browser = {
+    webkit: true,
+    version: navigator.userAgent.match(/WebKit\/([\d.]+)/)[1]
+  }
 })(Zepto);
 (function($){
   $.fn.anim = function(props, dur, ease){
@@ -186,26 +221,34 @@ var Zepto = (function() {
   });
 })(Zepto);
 (function($){
-  function ajax(method, url, success){
+  function ajax(method, url, success, data, type){
+    data = data || null;
     var r = new XMLHttpRequest();
-    r.onreadystatechange = function(){
-      if(r.readyState==4 && (r.status==200 || r.status==0))
-        success(r.responseText);
-    };
+    if (success instanceof Function) {
+      r.onreadystatechange = function(){
+        if(r.readyState==4 && (r.status==200 || r.status==0))
+          success(r.responseText);
+      };
+    }
     r.open(method,url,true);
+    if (type) r.setRequestHeader("Accept", type );
+    if (data instanceof Object) data = JSON.stringify(data), r.setRequestHeader('Content-Type','application/json');
     r.setRequestHeader('X-Requested-With','XMLHttpRequest');
-    r.send(null);
+    r.send(data);
   }
 
   $.get = function(url, success){ ajax('GET', url, success); };
-  $.post = function(url, success){ ajax('POST', url, success); };
+  $.post = function(url, data, success, type){
+    if (data instanceof Function) type = type || success, success = data, data = null;
+    ajax('POST', url, success, data, type);
+  };
   $.getJSON = function(url, success){
     $.get(url, function(json){ success(JSON.parse(json)) });
   };
   
   $.fn.load = function(url, success){
     var self = this, parts = url.split(/\s/), selector;
-    if(!this.length) return this;
+    if(!this.dom.length) return this;
     if(parts.length>1) url = parts[0], selector = parts[1];
     $.get(url, function(response){
       self.html(selector ?
